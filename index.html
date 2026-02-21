@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Excel PDF Maker — Batch Attendance Generator</title>
+  <meta name="description"
+    content="Generate professional batch attendance PDFs from Excel files with company and batch details stored securely in Firebase." />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Firebase SDK (v9 compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <!-- SheetJS for Excel parsing -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+  <!-- jsPDF for PDF generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+</head>
+
+<body>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-icon">📋</div>
+    <div class="header-text">
+      <h1>Excel PDF Maker</h1>
+      <p>Batch Attendance Generator · Firebase Powered</p>
+    </div>
+    <div class="firebase-badge" id="firebaseBadge">🔥 Firebase Connected</div>
+  </header>
+
+  <div class="app-container">
+
+    <!-- Step Progress -->
+    <div class="step-progress" role="tablist">
+      <div class="step-item active" id="step-tab-1" onclick="goToStep(1)" role="tab">
+        <div class="step-num" id="sn1">1</div>
+        <div>
+          <div class="step-label">Batch Details</div>
+        </div>
+      </div>
+      <div class="step-item" id="step-tab-2" onclick="goToStep(2)" role="tab">
+        <div class="step-num" id="sn2">2</div>
+        <div>
+          <div class="step-label">Upload Excel</div>
+        </div>
+      </div>
+      <div class="step-item" id="step-tab-3" onclick="goToStep(3)" role="tab">
+        <div class="step-num" id="sn3">3</div>
+        <div>
+          <div class="step-label">Preview &amp; Generate</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STEP 1: Form ── -->
+    <div class="step-section active" id="step-1">
+
+      <!-- ✨ Smart Text Paste Box -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:rgba(34,211,238,0.12);">✨</div>
+          <div>
+            <h2>Smart Auto-Fill</h2>
+            <p>Paste your batch details text and click "Parse &amp; Fill" — fields will be filled automatically</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <textarea id="smartPasteText" rows="6" placeholder="Paste batch info here. Example:
+IP name : MAHALAXMI INDUSTRIAL ASSOCIATION
+Batch Id - 44185
+Batch Start Date - 23-02-2026
+Batch End Date - 28-03-2026
+Batch Timings - 10:00:00-19:00:00
+Total Students - 30"></textarea>
+          <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
+            <button class="btn btn-primary" onclick="smartParseFill()">✨ Parse &amp; Fill Form</button>
+            <button class="btn btn-secondary"
+              onclick="document.getElementById('smartPasteText').value=''">Clear</button>
+            <span id="parseResult" style="font-size:0.82rem;color:#4ade80;display:none">✅ Fields filled
+              successfully!</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Company + Batch Info Form -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:rgba(91,156,246,0.15);">🏢</div>
+          <div>
+            <h2>Company &amp; Batch Information</h2>
+            <p>Saved automatically for future use</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="form-grid">
+            <!-- Company Name (IP Name) -->
+            <div class="form-group wide">
+              <label for="companyName">IP / Company Name <span class="required-star">*</span></label>
+              <input type="text" id="companyName" list="companyList" placeholder="Type or select company…"
+                autocomplete="off" required />
+              <datalist id="companyList"></datalist>
+              <span class="input-hint">Typing an existing name auto-fills Company ID &amp; Password</span>
+            </div>
+
+            <!-- Company ID -->
+            <div class="form-group">
+              <label for="companyId">Company / IDP ID <span class="required-star">*</span></label>
+              <input type="text" id="companyId" placeholder="e.g. IDP-20241" autocomplete="off" required />
+            </div>
+
+            <!-- Company Password -->
+            <div class="form-group wide">
+              <label for="companyPassword">Company Password <span class="required-star">*</span></label>
+              <input type="text" id="companyPassword" placeholder="Enter password" autocomplete="off" required />
+            </div>
+
+            <div class="section-divider"><span>Batch Details</span></div>
+
+            <!-- Batch ID -->
+            <div class="form-group">
+              <label for="batchId">Batch ID <span class="required-star">*</span></label>
+              <input type="text" id="batchId" placeholder="e.g. 44185" autocomplete="off" required />
+            </div>
+
+            <!-- Batch Start Date -->
+            <div class="form-group">
+              <label for="batchStartDate">Batch Start Date <span class="required-star">*</span></label>
+              <input type="date" id="batchStartDate" required />
+            </div>
+
+            <!-- Batch End Date -->
+            <div class="form-group">
+              <label for="batchEndDate">Batch End Date <span class="required-star">*</span></label>
+              <input type="date" id="batchEndDate" required />
+            </div>
+
+            <!-- Batch Start Time -->
+            <div class="form-group">
+              <label for="batchStartTime">Batch Start Time <span class="required-star">*</span></label>
+              <input type="time" id="batchStartTime" required />
+              <span class="input-hint">e.g. 10:00</span>
+            </div>
+
+            <!-- Batch End Time -->
+            <div class="form-group">
+              <label for="batchEndTime">Batch End Time <span class="required-star">*</span></label>
+              <input type="time" id="batchEndTime" required />
+              <span class="input-hint">e.g. 19:00 → 9 hrs/day (+30 days expected end)</span>
+            </div>
+
+            <div class="section-divider"><span>Attendee Information</span></div>
+
+            <!-- Attendee Name -->
+            <div class="form-group wide">
+              <label for="attendeeName">Attendee Name <span class="required-star">*</span></label>
+              <input type="text" id="attendeeName" list="attendeeList" placeholder="Type or select attendee…"
+                autocomplete="off" required />
+              <datalist id="attendeeList"></datalist>
+              <span class="input-hint">Previously saved attendees appear in the list</span>
+            </div>
+
+            <!-- Attendee Start Date -->
+            <div class="form-group">
+              <label for="attendeeStartDate">Attendee Start Date <span class="required-star">*</span></label>
+              <input type="date" id="attendeeStartDate" required />
+            </div>
+          </div>
+
+          <div class="action-bar">
+            <button class="btn btn-primary" onclick="handleStep1Next()">
+              Next: Upload Excel →
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STEP 2: Upload ── -->
+    <div class="step-section" id="step-2">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:rgba(34,211,238,0.12);">📂</div>
+          <div>
+            <h2>Upload Excel File</h2>
+            <p>Upload the "Approved Batches" Excel file to parse student data</p>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="upload-zone" id="uploadZone">
+            <input type="file" id="excelFile" accept=".xlsx,.xls" onchange="handleFileSelect(event)" />
+            <span class="upload-icon">📊</span>
+            <h3>Drop your Excel file here</h3>
+            <p>or click to browse · Supports .xlsx and .xls</p>
+          </div>
+
+          <div class="file-selected" id="fileSelectedBadge">
+            <span style="font-size:1.4rem">✅</span>
+            <div>
+              <div class="file-name" id="selectedFileName">-</div>
+              <div class="file-size" id="selectedFileSize">-</div>
+            </div>
+            <button class="btn btn-secondary" style="margin-left:auto;padding:8px 14px;font-size:0.8rem"
+              onclick="clearFile()">Clear</button>
+          </div>
+
+          <div class="action-bar">
+            <button class="btn btn-secondary" onclick="goToStep(1)">← Back</button>
+            <button class="btn btn-primary" onclick="handleStep2Next()" id="btn-next-2" disabled>
+              Preview Students →
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── STEP 3: Preview & Generate ── -->
+    <div class="step-section" id="step-3">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:rgba(167,139,250,0.15);">📄</div>
+          <div>
+            <h2>Preview &amp; Generate PDF</h2>
+            <p>Review extracted data before generating the attendance PDF</p>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <!-- Summary Chips -->
+          <div class="stats-row" id="summaryChips"></div>
+
+          <!-- Batch Details Summary -->
+          <div
+            style="background:rgba(91,156,246,0.06);border:1px solid rgba(91,156,246,0.15);border-radius:12px;padding:18px 22px;margin-bottom:24px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 24px;"
+              id="detailsSummary"></div>
+          </div>
+
+          <!-- Students Table Preview -->
+          <div class="preview-container">
+            <table id="previewTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Student Name</th>
+                  <th>Attendance Ref.ID (Trimmed &amp; Sorted)</th>
+                  <th>Absent</th>
+                  <th>Eye Number</th>
+                  <th>Remark</th>
+                </tr>
+              </thead>
+              <tbody id="previewTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="action-bar">
+            <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+            <button class="btn btn-success" onclick="generatePDF()" id="btn-generate">
+              <span id="generateBtnText">🖨️ Generate PDF</span>
+              <div class="spinner" id="generateSpinner" style="display:none"></div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.app-container -->
+
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
