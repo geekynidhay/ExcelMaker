@@ -477,39 +477,48 @@ async function generatePDF() {
       }
     });
 
-    // ─ STUDENT TABLE ─
-    const tableStartY = 10 + headerH + 5;
-    const tableData = studentData.map(s => [s.sno, s.name, s.trimmedRefId, '', '', '']);
+    // ─ STUDENT TABLE — split into 2 pages (max 15 rows each) ─
+    const ROWS_PER_PAGE = 15;
+    const tableStartY = 10 + headerH + 5;  // ~87mm from top
+    const PH = 210;                         // landscape A4 page height
+    const FOOTER_H = 10;
+    // 6.9mm per row so 15 rows fill page 1 (104mm available)
+    const ROW_H = 6.9;
 
-    doc.autoTable({
+    const tableData = studentData.map(s => [s.sno, s.name, s.trimmedRefId, '', '', '']);
+    const firstHalf = tableData.slice(0, ROWS_PER_PAGE);
+    const secondHalf = tableData.slice(ROWS_PER_PAGE);
+
+    const commonStyles = {
       head: [['S.No', 'Student Name', 'Attendance Ref. ID', 'Absent', 'Eye Number', 'Remark']],
-      body: tableData,
-      startY: tableStartY,
       margin: { left: PM, right: PM },
+      tableLineColor: [0, 0, 0],
+      tableLineWidth: 0.4,
       styles: {
         font: 'times',
-        fontSize: 9,
+        fontSize: 8.5,
         textColor: [0, 0, 0],
-        fillColor: [255, 255, 255],   // white background
+        fillColor: [255, 255, 255],
         lineColor: [0, 0, 0],
         lineWidth: 0.3,
-        cellPadding: { top: 3, bottom: 3, left: 4, right: 4 },
+        minCellHeight: ROW_H,
+        cellPadding: { top: 1.8, bottom: 1.8, left: 3, right: 3 },
         overflow: 'linebreak',
+        valign: 'middle',
       },
       headStyles: {
-        fillColor: [0, 0, 0],         // black header
-        textColor: [255, 255, 255],   // white text
+        fillColor: [0, 0, 0],
+        textColor: [255, 255, 255],
         fontStyle: 'bold',
         fontSize: 9,
         halign: 'center',
+        minCellHeight: 9,
       },
-      alternateRowStyles: {
-        fillColor: [255, 255, 255],     // keep white (no alternating for B&W print)
-      },
+      alternateRowStyles: { fillColor: [255, 255, 255] },
       columnStyles: {
-        0: { cellWidth: 14, halign: 'center' },
-        1: { cellWidth: 80, fontStyle: 'bold' },
-        2: { cellWidth: 42, halign: 'center', font: 'courier' },
+        0: { cellWidth: 13, halign: 'center' },
+        1: { cellWidth: 82, fontStyle: 'bold' },
+        2: { cellWidth: 42, halign: 'center', font: 'courier', fontSize: 8 },
         3: { cellWidth: 22, halign: 'center' },
         4: { cellWidth: 22, halign: 'center' },
         5: { cellWidth: 'auto' },
@@ -521,11 +530,26 @@ async function generatePDF() {
         doc.setTextColor(100);
         doc.text(
           `${formData.companyName}  ·  Batch: ${formData.batchId}  ·  Page ${pageNumber} of ${total}`,
-          PW / 2, doc.internal.pageSize.height - 5,
-          { align: 'center' }
+          PW / 2, PH - 4, { align: 'center' }
         );
       },
-    });
+    };
+
+    // Page 1: first 15 students
+    doc.autoTable({ ...commonStyles, body: firstHalf, startY: tableStartY });
+
+    // Page 2: remaining students (if any — max 15 more)
+    if (secondHalf.length > 0) {
+      doc.addPage();
+      const p2Available = PH - 15 - FOOTER_H - 9;  // space for rows on page 2
+      const p2RowH = Math.max(ROW_H, p2Available / secondHalf.length);
+      doc.autoTable({
+        ...commonStyles,
+        body: secondHalf,
+        startY: 15,
+        styles: { ...commonStyles.styles, minCellHeight: p2RowH },
+      });
+    }
 
     // ─ Save ─
     const safeCo = formData.companyName.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
