@@ -1,3 +1,4 @@
+
 // ══════════════════════════════════════════════════════════════════
 //  Excel PDF Maker — app.js
 //  Firebase Realtime DB + SheetJS + jsPDF (B&W / TNR)
@@ -482,10 +483,8 @@ async function generatePDF() {
     const tableStartY = 10 + headerH + 5;  // ~87mm from top
     const PH = 210;                         // landscape A4 page height
     const FOOTER_H = 10;
-    const TABLE_HEAD_H = 8;
-    // Dynamic: fits 15 rows in exactly the available space on page 1
-    const p1Available = PH - tableStartY - FOOTER_H - TABLE_HEAD_H;
-    const ROW_H = parseFloat((p1Available / ROWS_PER_PAGE).toFixed(2));
+    // 6.9mm per row so 15 rows fill page 1 (104mm available)
+    const ROW_H = 6.9;
 
     const tableData = studentData.map(s => [s.sno, s.name, s.trimmedRefId, '', '', '']);
     const firstHalf = tableData.slice(0, ROWS_PER_PAGE);
@@ -498,14 +497,14 @@ async function generatePDF() {
       tableLineWidth: 0.4,
       styles: {
         font: 'times',
-        fontSize: 8,         // ← 8pt = ~2.8mm text, safely under 7.5mm row budget
+        fontSize: 8.5,
         textColor: [0, 0, 0],
         fillColor: [255, 255, 255],
         lineColor: [0, 0, 0],
         lineWidth: 0.3,
         minCellHeight: ROW_H,
-        cellPadding: { top: 1.5, bottom: 1.5, left: 3, right: 3 }, // 8pt+3mm pad = ~5.8mm < ROW_H
-        overflow: 'ellipsize',
+        cellPadding: { top: 1.8, bottom: 1.8, left: 3, right: 3 },
+        overflow: 'linebreak',
         valign: 'middle',
       },
       headStyles: {
@@ -537,17 +536,14 @@ async function generatePDF() {
       },
     };
 
-    // Page 1: first 15 students — must not overflow
+    // Page 1: first 15 students
     doc.autoTable({ ...commonStyles, body: firstHalf, startY: tableStartY });
 
-    // Page 2: remaining students — fill the full page evenly
+    // Page 2: remaining students (if any — max 15 more)
     if (secondHalf.length > 0) {
-      // Only add a new page if autoTable didn't already create one for overflow
-      if (doc.internal.getNumberOfPages() === 1) doc.addPage();
-      else doc.addPage(); // always want a fresh page for the second batch
-
-      const p2Available = PH - 15 - FOOTER_H - TABLE_HEAD_H;
-      const p2RowH = parseFloat((p2Available / secondHalf.length).toFixed(2));
+      doc.addPage();
+      const p2Available = PH - 15 - FOOTER_H - 9;  // space for rows on page 2
+      const p2RowH = Math.max(ROW_H, p2Available / secondHalf.length);
       doc.autoTable({
         ...commonStyles,
         body: secondHalf,
@@ -572,94 +568,7 @@ async function generatePDF() {
   }
 }
 
-// ── Calendar / ICS ───────────────────────────────────────────────
-// Format YYYY-MM-DD + HH:MM  →  YYYYMMDDTHHMMSS  (local, for TZID approach)
-function toICSLocal(dateStr, timeStr) {
-  const [y, m, d] = dateStr.split('-');
-  const [h, mi] = timeStr.split(':');
-  return `${y}${m}${d}T${h}${mi}00`;
-}
-
-// Format YYYY-MM-DD + HH:MM  →  YYYYMMDDTHHMMSSZ  (UTC, IST = UTC+5:30)
-function toICSUtc(dateStr, timeStr) {
-  const dt = new Date(`${dateStr}T${timeStr}:00+05:30`);
-  const p = n => String(n).padStart(2, '0');
-  return `${dt.getUTCFullYear()}${p(dt.getUTCMonth() + 1)}${p(dt.getUTCDate())}T${p(dt.getUTCHours())}${p(dt.getUTCMinutes())}00Z`;
-}
-
-// Generate .ics content with daily recurring events + 2 alarms
-function generateICS() {
-  const id = formData.batchId;
-  const startD = formData.batchStartDate;   // YYYY-MM-DD
-  const endD = formData.batchEndDate;
-  const startT = formData.batchStartTime;   // HH:MM
-  const endT = formData.batchEndTime;
-  const summary = `${id} Attendance`;
-  const uid = `${id}-${Date.now()}@excelpdmmaker`;
-
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Excel PDF Maker//Batch Attendance//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'BEGIN:VEVENT',
-    `UID:${uid}`,
-    `DTSTART;TZID=Asia/Kolkata:${toICSLocal(startD, startT)}`,
-    `DTEND;TZID=Asia/Kolkata:${toICSLocal(startD, endT)}`,
-    `RRULE:FREQ=DAILY;UNTIL=${toICSUtc(endD, endT)}`,
-    `SUMMARY:${summary}`,
-    'STATUS:CONFIRMED',
-    'TRANSP:OPAQUE',
-    // Alarm 1: 25 minutes before batch start
-    'BEGIN:VALARM',
-    'ACTION:DISPLAY',
-    `DESCRIPTION:${summary} starts in 25 minutes — mark attendance!`,
-    'TRIGGER:-PT25M',
-    'END:VALARM',
-    // Alarm 2: at exactly batch end time
-    'BEGIN:VALARM',
-    'ACTION:DISPLAY',
-    `DESCRIPTION:${summary} ending now — submit attendance!`,
-    'TRIGGER;RELATED=END:PT0S',
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ];
-  return lines.join('\r\n');
-}
-
-// Trigger .ics download
-function downloadICS() {
-  if (!formData.batchId) { showToast('Please complete batch details first', 'error'); return; }
-  const content = generateICS();
-  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${formData.batchId} - ${formData.companyName} Schedule.ics`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('✅ Calendar file downloaded! Open it to add reminders.', 'success');
-}
-
-// Build a Google Calendar quick-add URL (fallback for PDF link)
-function buildGCalUrl() {
-  const start = toICSUtc(formData.batchStartDate, formData.batchStartTime);
-  const end = toICSUtc(formData.batchStartDate, formData.batchEndTime);
-  const until = toICSUtc(formData.batchEndDate, formData.batchEndTime);
-  const title = encodeURIComponent(`${formData.batchId} Attendance`);
-  const details = encodeURIComponent(
-    `Daily batch attendance. Add reminders: 25 min before start & at end time.\nBatch: ${formData.batchId} | ${formData.companyName}`
-  );
-  const recur = encodeURIComponent(`RRULE:FREQ=DAILY;UNTIL=${until}`);
-  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&recur=${recur}&details=${details}`;
-}
-
 // ── Utilities ────────────────────────────────────────────────────
-
 function formatDate(d) {
   if (!d || isNaN(d)) return '';
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
