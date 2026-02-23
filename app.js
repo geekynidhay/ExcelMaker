@@ -1,4 +1,3 @@
-
 // ══════════════════════════════════════════════════════════════════
 //  Excel PDF Maker — app.js
 //  Firebase Realtime DB + SheetJS + jsPDF (B&W / TNR)
@@ -396,58 +395,58 @@ async function generatePDF() {
   const btn = document.getElementById('btn-generate');
   const txt = document.getElementById('generateBtnText');
   const spin = document.getElementById('generateSpinner');
-  btn.disabled = true; txt.textContent = 'Generating…'; spin.style.display = 'block';
+  btn.disabled = true; txt.textContent = 'Generating\u2026'; spin.style.display = 'block';
   await new Promise(r => setTimeout(r, 50));
 
   try {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const PW = 297, PM = 12;
+    // A4 Portrait: 210 x 297 mm
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const PW = 210, PH = 297, PM = 12;
+    const contentW = PW - PM * 2;  // 186mm
 
-    // ─ Fonts: Times New Roman ─
     doc.setFont('times', 'normal');
 
-    // ─ HEADER BOX ─
-    const headerH = 72;
-    // Outer box
-    doc.setDrawColor(0);
-    doc.setLineWidth(0.8);
-    doc.rect(PM, 10, PW - PM * 2, headerH);
+    // ── HEADER BOX ──────────────────────────────────────────────
+    const hTop = 10;
 
-    // Title
     doc.setFont('times', 'bold');
-    doc.setFontSize(15);
+    doc.setFontSize(13);
     doc.setTextColor(0);
-    doc.text(`${formData.batchId}  —  ${formData.companyName}`, PW / 2, 19, { align: 'center', maxWidth: PW - PM * 4 });
+
+    const titleStr = `${formData.batchId}  \u2014  ${formData.companyName}`;
+    const titleText = doc.splitTextToSize(titleStr, contentW - 4);
+    const titleLines = titleText.length;
+    doc.text(titleText, PW / 2, hTop + 8, { align: 'center' });
+
+    const titleBottom = hTop + 8 + (titleLines - 1) * 6;
+    const lineY = titleBottom + 3;
 
     // Thin divider under title
-    doc.setLineWidth(0.4);
-    doc.line(PM, 21, PW - PM, 21);
+    doc.setLineWidth(0.35);
+    doc.line(PM, lineY, PW - PM, lineY);
 
-    // Highlighted key row (Company Name, Batch ID, Start Date, Timings) — B&W: gray fill
-    const keyY = 23, keyH = 11;
+    // Highlighted key row (2 boxes instead of 4)
+    const keyY = lineY + 1, keyH = 10;
+    const keyW = contentW / 2;
     const keyFields = [
-      `Company/IP: ${formData.companyName}`,
-      `Batch ID: ${formData.batchId}`,
       `Start Date: ${formatDate(new Date(formData.batchStartDate))}`,
       `Timings: ${formData.batchTimings}`,
     ];
-    const keyW = (PW - PM * 2) / keyFields.length;
     keyFields.forEach((text, i) => {
       const x = PM + i * keyW;
-      // Gray fill for highlighted fields
-      doc.setFillColor(220, 220, 220);
+      doc.setFillColor(215, 215, 215);
       doc.rect(x, keyY, keyW, keyH, 'F');
       doc.setDrawColor(0);
       doc.setLineWidth(0.3);
       doc.rect(x, keyY, keyW, keyH);
       doc.setFont('times', 'bold');
-      doc.setFontSize(8.5);
+      doc.setFontSize(9);
       doc.setTextColor(0);
-      doc.text(text, x + keyW / 2, keyY + 7.2, { align: 'center', maxWidth: keyW - 4 });
+      doc.text(text, x + keyW / 2, keyY + 6.5, { align: 'center', maxWidth: keyW - 3 });
     });
 
-    // Details grid (2 rows × 4 cols)
+    // Details grid (2 rows x 4 cols)
     const gridY = keyY + keyH + 2;
     const detailItems = [
       ['Company / IDP ID', formData.companyId],
@@ -459,116 +458,108 @@ async function generatePDF() {
       ['Attendee Start Date', formatDate(new Date(formData.attendeeStartDate))],
       ['', ''],
     ];
-    const dCols = 4;
-    const dW = (PW - PM * 2) / dCols;
+    const dCols = 4, dW = contentW / dCols;
     detailItems.forEach(([label, val], i) => {
-      const col = i % dCols;
-      const row = Math.floor(i / dCols);
-      const x = PM + col * dW + 3;
-      const y = gridY + row * 11;
+      const col = i % dCols, row = Math.floor(i / dCols);
+      const x = PM + col * dW + 2, y = gridY + row * 11;
       if (label) {
         doc.setFont('times', 'bold');
-        doc.setFontSize(6.5);
+        doc.setFontSize(5.8);
         doc.setTextColor(80);
-        doc.text(label.toUpperCase(), x, y + 4);
+        doc.text(label.toUpperCase(), x, y + 3.5);
         doc.setFont('times', 'normal');
-        doc.setFontSize(8.5);
+        doc.setFontSize(7.8);
         doc.setTextColor(0);
-        doc.text(String(val), x, y + 9.5, { maxWidth: dW - 6 });
+        doc.text(String(val), x, y + 9, { maxWidth: dW - 4 });
       }
     });
 
-    // ─ STUDENT TABLE — split into 2 pages (max 15 rows each) ─
-    const ROWS_PER_PAGE = 15;
-    const tableStartY = 10 + headerH + 5;  // ~87mm from top
-    const PH = 210;                         // landscape A4 page height
-    const FOOTER_H = 10;
-    // 6.9mm per row so 15 rows fill page 1 (104mm available)
-    const ROW_H = 6.9;
+    const headerH = (gridY - hTop) + 24;
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.8);
+    doc.rect(PM, hTop, contentW, headerH);
+
+    // ── STUDENT TABLE ────────────────────────────────────────────
+    const tableStartY = hTop + headerH + 5;   // ~61mm
+    const TABLE_HEAD_H = 8;
+
+    // Calculate ROW_H such that exactly 15 rows fit on the first page
+    const rowsPerPage = 15;
+    const marginBottom = PM;
+    const availableFirstPage = PH - tableStartY - marginBottom - TABLE_HEAD_H;
+    // Round down slightly to ensure exactly 15 fit without premature page breaks
+    const ROW_H = Math.floor((availableFirstPage / rowsPerPage) * 10) / 10 - 0.2;
 
     const tableData = studentData.map(s => [s.sno, s.name, s.trimmedRefId, '', '', '']);
-    const firstHalf = tableData.slice(0, ROWS_PER_PAGE);
-    const secondHalf = tableData.slice(ROWS_PER_PAGE);
 
-    const commonStyles = {
+    doc.autoTable({
       head: [['S.No', 'Student Name', 'Attendance Ref. ID', 'Absent', 'Eye Number', 'Remark']],
-      margin: { left: PM, right: PM },
+      body: tableData,
+      startY: tableStartY,
+      margin: { top: PM, bottom: PM, left: PM, right: PM },
       tableLineColor: [0, 0, 0],
       tableLineWidth: 0.4,
       styles: {
         font: 'times',
-        fontSize: 8.5,
+        fontSize: 7.5,
         textColor: [0, 0, 0],
         fillColor: [255, 255, 255],
         lineColor: [0, 0, 0],
         lineWidth: 0.3,
         minCellHeight: ROW_H,
-        cellPadding: { top: 1.8, bottom: 1.8, left: 3, right: 3 },
-        overflow: 'linebreak',
+        cellPadding: { top: 1.2, bottom: 1.2, left: 2.5, right: 2.5 },
+        overflow: 'ellipsize',
         valign: 'middle',
       },
       headStyles: {
         fillColor: [0, 0, 0],
         textColor: [255, 255, 255],
         fontStyle: 'bold',
-        fontSize: 9,
+        fontSize: 8,
         halign: 'center',
-        minCellHeight: 9,
+        minCellHeight: TABLE_HEAD_H,
       },
       alternateRowStyles: { fillColor: [255, 255, 255] },
       columnStyles: {
-        0: { cellWidth: 13, halign: 'center' },
-        1: { cellWidth: 82, fontStyle: 'bold' },
-        2: { cellWidth: 42, halign: 'center', font: 'courier', fontSize: 8 },
-        3: { cellWidth: 22, halign: 'center' },
-        4: { cellWidth: 22, halign: 'center' },
+        0: { cellWidth: 11, halign: 'center' },
+        1: { cellWidth: 75, fontStyle: 'bold' },
+        2: { cellWidth: 35, halign: 'center', font: 'courier', fontSize: 7 },
+        3: { cellWidth: 18, halign: 'center' },
+        4: { cellWidth: 20, halign: 'center' },
         5: { cellWidth: 'auto' },
       },
       didDrawPage: ({ pageNumber }) => {
         const total = doc.internal.getNumberOfPages();
         doc.setFont('times', 'italic');
-        doc.setFontSize(7);
+        doc.setFontSize(6.5);
         doc.setTextColor(100);
         doc.text(
-          `${formData.companyName}  ·  Batch: ${formData.batchId}  ·  Page ${pageNumber} of ${total}`,
+          `${formData.companyName}  \u00b7  Batch: ${formData.batchId}  \u00b7  Page ${pageNumber} of ${total}`,
           PW / 2, PH - 4, { align: 'center' }
         );
       },
-    };
+    });
 
-    // Page 1: first 15 students
-    doc.autoTable({ ...commonStyles, body: firstHalf, startY: tableStartY });
-
-    // Page 2: remaining students (if any — max 15 more)
-    if (secondHalf.length > 0) {
-      doc.addPage();
-      const p2Available = PH - 15 - FOOTER_H - 9;  // space for rows on page 2
-      const p2RowH = Math.max(ROW_H, p2Available / secondHalf.length);
-      doc.autoTable({
-        ...commonStyles,
-        body: secondHalf,
-        startY: 15,
-        styles: { ...commonStyles.styles, minCellHeight: p2RowH },
-      });
-    }
-
-    // ─ Save ─
+    // ── Save ─────────────────────────────────────────────────────
     const safeCo = formData.companyName.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
     const safeBatch = formData.batchId.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
     doc.save(`${safeBatch} - ${safeCo}.pdf`);
-    showToast(`✅ PDF saved as "${safeBatch} - ${safeCo}.pdf"`, 'success');
+    showToast(`\u2705 PDF saved as "${safeBatch} - ${safeCo}.pdf"`, 'success');
 
   } catch (e) {
     console.error(e);
     showToast('PDF generation failed: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
-    txt.textContent = '🖨️ Generate PDF';
+    txt.textContent = '\uD83D\uDDA8\uFE0F Generate PDF';
     spin.style.display = 'none';
   }
 }
 
+
+
 // ── Utilities ────────────────────────────────────────────────────
+
 function formatDate(d) {
   if (!d || isNaN(d)) return '';
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
